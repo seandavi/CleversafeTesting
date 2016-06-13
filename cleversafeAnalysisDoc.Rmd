@@ -1,0 +1,114 @@
+---
+title: "Cleversafe Transfer Analysis"
+author: "Sean Davis"
+date: "June 10, 2016"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: readable
+---
+
+```{r results='hide',echo=FALSE}
+library(knitr)
+opts_chunk$set(warning=FALSE,message=FALSE,echo=FALSE)
+```
+
+
+# Introduction
+
+We have installed a [Cleversafe storage system](https://www.cleversafe.com/) in Frederick. Cleversafe is an [object storage system](https://en.wikipedia.org/wiki/Object_storage).  It uses [erasure coding](https://www.cleversafe.com/platform/how-it-works) to provide high availability and data security.  
+
+The current infrastructure includes four storage accessors, each of which is capable of accessing identical objects. Large files are transferred to the object store by splitting them up into pieces and transferring each piece independently. Once they all arrive at the Cleversafe accessor, they are put back together to form a single object for storage.  
+
+# The experiment
+
+The main question of interest in this experiment is:
+
+> What is the transfer speed of a single large file transfer?
+
+Given the system at hand, there are a few variables that might impace transfer speeds. 
+
+1. File size
+2. Transfer concurrency: how many parallel streams are used to transfer the file chunks. (used between 1 and 9)
+3. Transfer chunk size: the maximum size of each chunk. (used between 10 and 100MB)
+4. The accessor used: though unlikely to affect the results, this was captured in the logs.
+
+## What did I do?
+
+I set up a transfer that included fastq files (gzipped) from the Meltzer lab.  In all, I captured the results of 710 transfers coming from our local storage server (1Gb connection, not being used) in an overnight transfer window. 
+
+# Analysis
+
+```{r results='hide',echo=FALSE,warning=FALSE,message=FALSE}
+library(readr)
+transfers = read_tsv('transfers.txt',col_names = FALSE)[,-c(1,2)]
+colnames(transfers) = c('size','seconds','mb_sec','mp_thresh','max_conc','accessor')
+transfers$accessor = as.factor(transfers$accessor)
+library(ggplot2)
+library(dplyr)
+library(DT)
+```
+
+Now, we can investigate the relationships between variables. All transfers are noted in the table below.
+
+```{r plot10}
+datatable(transfers)
+```
+
+The distribution of file sizes is given in the next plot.
+
+```{r filesizes}
+ggplot(transfers,aes(x=size)) + geom_histogram()
+```
+
+## Effect of accessor
+
+I used three of the four accessors (coding error, so I ended up not using the fourth). The next plot shows that the three accessors seem to have similar transfer performances.
+
+```{r}
+filter(transfers,mb_sec>35) %>% ggplot(aes(x=accessor,y=mb_sec)) + geom_violin(alpha=0.5) + geom_jitter(alpha=0.5)
+```
+
+## Effect of file size
+
+The plot below shows transfer speed as a function of file size (in MB). There is not a strong trend here in terms of transfer speeds and file size.
+
+```{r}
+filter(transfers,mb_sec>35) %>% ggplot(aes(x=size,y=mb_sec)) + geom_point(alpha=0.5) + scale_x_log10()
+```
+
+## Effect of chunk size
+
+The following plot shows the effect of chunk size on transfer speed. Again, there does not appear to be a strong trend.
+
+```{r}
+filter(transfers,mb_sec>35) %>% ggplot(aes(x=mp_thresh,y=mb_sec)) + geom_point(alpha=0.5)
+```
+
+## Effect of concurrency
+
+Recall that large files are broken into pieces and transferred. If concurrency is more than 1, these transfers occur in parallel. There are many factors that could affect the efficiency here, but we simply investigate how concurrency affects file transfer speeds *in this test*.
+
+```{r}
+filter(transfers,mb_sec>35) %>% ggplot(aes(x=factor(max_conc),y=mb_sec)) + geom_violin(alpha=0.5)
+```
+
+# Conclusions
+
+There appears to be one large determinant of file transfer speeds. The concurrency in this system is best set to 1. This may change once a load balancer is in place and in a system that has higher network connectivity, but for the simple setup of transferring a large file from a single location to one accessor, the conclusion is that the main setting to tinker with is the concurrency.
+
+  <script type="text/javascript">
+
+    var _gaq = _gaq || [];
+    _gaq.push(['_setAccount', 'UA-2851481-1']);
+    _gaq.push(['_trackPageview']);
+
+    (function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://' : 'http://') + 'stats.g.doubleclick.net/dc.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+    })();
+
+  </script>
+  
